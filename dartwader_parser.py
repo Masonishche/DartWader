@@ -1,5 +1,5 @@
 import sys
-# Імпортуємо тільки функцію lex, щоб уникнути автозапуску коду
+# Імпортуємо тільки функцію lex
 from dartwader_lexer import lex
 
 # Глобальні змінні парсера
@@ -40,7 +40,7 @@ def parseToken(expected_lexeme, expected_token):
     numLine, lex_val, tok, _ = getSymb()
 
     match = False
-    if expected_lexeme == '*':  # Wildcard для значення (наприклад, будь-який id)
+    if expected_lexeme == '*':  # Wildcard
         if tok == expected_token:
             match = True
     else:
@@ -78,19 +78,22 @@ def parseProgram():
     try:
         parseImportSection()
 
-        # TopLevelDecl або MainFunction
         while True:
             _, lex_val, tok, _ = getSymb()
 
             if tok == 'End of Program':
-                failParse('неочікуваний кінець програми', ('void main', 'keyword', 0))
+                # Успішне завершення, якщо файл скінчився
+                break
 
-            # Перевірка на MainFunction: void main ( )
+                # Перевірка на MainFunction: void main ( )
             if lex_val == 'void':
                 if numRow + 1 < len_tableOfSymb:
                     if table_symb[numRow + 1][1] == 'main':
                         parseMainFunction()
-                        break
+                        # Після main програма може закінчитися або йти далі (залежить від структури)
+                        # Зазвичай main - це точка входу, але функції можуть бути після неї.
+                        # У цьому циклі ми просто йдемо далі.
+                        continue
 
             parseTopLevelDecl()
 
@@ -100,8 +103,6 @@ def parseProgram():
         pass
 
 
-# ImportSection = { ImportDecl }
-# ImportDecl = 'import' String ';'
 def parseImportSection():
     indent = nextIndt()
     print(indent + 'parseImportSection():')
@@ -116,7 +117,6 @@ def parseImportSection():
     predIndt()
 
 
-# TopLevelDecl = VarDecl | FunctionDecl | ClassDecl
 def parseTopLevelDecl():
     indent = nextIndt()
     print(indent + 'parseTopLevelDecl():')
@@ -125,11 +125,7 @@ def parseTopLevelDecl():
     if lex_val == 'class':
         parseClassDecl()
     elif lex_val in ('var', 'final', 'const') or lex_val in ('int', 'double', 'bool', 'string', 'void', 'dynamic'):
-        # Щоб розрізнити змінну і функцію, дивимось наперед
-        # Var: Type id = ... ;
-        # Func: Type id ( ...
         lookahead_idx = 2 if lex_val in ('var', 'final', 'const') else 1
-        # Спрощена евристика для КП
         if numRow + lookahead_idx < len_tableOfSymb:
             token_after_id = table_symb[numRow + lookahead_idx][1]
             if token_after_id == '(':
@@ -143,29 +139,25 @@ def parseTopLevelDecl():
     predIndt()
 
 
-# ClassDecl = 'class' Ident ... '{' ... '}'
 def parseClassDecl():
+    global numRow  # <--- ДОДАНО GLOBAL
     indent = nextIndt()
     print(indent + 'parseClassDecl():')
     parseToken('class', 'keyword')
     parseToken('*', 'id')
-    # Пропускаємо extends/with для спрощення, шукаємо тіло
     _, lex_val, _, _ = getSymb()
     if lex_val == 'extends':
         parseToken('extends', 'keyword')
         parseToken('*', 'id')
     parseToken('{', 'bracket')
-    # Пропускаємо члени класу до }
     while True:
         _, lex_val, _, _ = getSymb()
         if lex_val == '}': break
-        # Тут мав би бути розбір методів/полів
         numRow += 1
     parseToken('}', 'bracket')
     predIndt()
 
 
-# MainFunction = 'void' 'main' '(' ')' Block
 def parseMainFunction():
     indent = nextIndt()
     print(indent + 'parseMainFunction():')
@@ -177,7 +169,6 @@ def parseMainFunction():
     predIndt()
 
 
-# Block = '{' StatementList '}'
 def parseBlock():
     indent = nextIndt()
     print(indent + 'parseBlock():')
@@ -187,9 +178,6 @@ def parseBlock():
     predIndt()
 
 
-# StatementList = Statement { ';' Statement }
-# Примітка: Враховуючи специфікацію і приклади, де Assign сам має ';',
-# ми просто читаємо Statements, поки не зустрінемо '}'
 def parseStatementList():
     indent = nextIndt()
     print(indent + 'parseStatementList():')
@@ -219,21 +207,19 @@ def parseStatement():
     elif lex_val == 'return':
         parseReturn()
     elif lex_val in ('var', 'final', 'const', 'int', 'double', 'bool', 'string', 'dynamic'):
-        parseVarDecl()  # Локальні змінні
+        parseVarDecl()
     elif tok == 'id':
-        # Присвоєння або виклик функції
         if numRow + 1 < len_tableOfSymb and table_symb[numRow + 1][1] == '(':
             parseFunctionCall()
         else:
             parseAssign()
     elif lex_val == ';':
-        parseToken(';', 'punct')  # Порожній оператор
+        parseToken(';', 'punct')
     else:
         failParse('невідповідність інструкцій', (*getSymb()[:3], 'Statement'))
     predIndt()
 
 
-# VarDecl = [Modifier] [Type] Ident [ '=' Expression ] ';'
 def parseVarDecl():
     indent = nextIndt()
     print(indent + 'parseVarDecl():')
@@ -254,15 +240,13 @@ def parseVarDecl():
     predIndt()
 
 
-# FunctionDecl = ... (спрощено)
 def parseFunctionDecl():
+    global numRow  # <--- ДОДАНО GLOBAL
     indent = nextIndt()
     print(indent + 'parseFunctionDecl():')
-    # Пропускаємо тип і ім'я
     if table_symb[numRow][2] == 'keyword': numRow += 1
     parseToken('*', 'id')
     parseToken('(', 'bracket')
-    # Params loop...
     while table_symb[numRow][1] != ')':
         numRow += 1
     parseToken(')', 'bracket')
@@ -270,18 +254,16 @@ def parseFunctionDecl():
     predIndt()
 
 
-# Assign = Ident '=' Expression ';'
 def parseAssign():
     indent = nextIndt()
     print(indent + 'parseAssign():')
     parseToken('*', 'id')
-    parseToken('=', 'assign_op')  # Спрощено, можна додати +=, -=
+    parseToken('=', 'assign_op')
     parseExpression()
     parseToken(';', 'punct')
     predIndt()
 
 
-# ForStatement = 'for' '(' Ident '=' Expression ('to'|'downto') Expression ')' DoBlock
 def parseForStatement():
     indent = nextIndt()
     print(indent + 'parseForStatement():')
@@ -311,7 +293,6 @@ def parseDoBlock():
         parseStatement()
 
 
-# IfStatement = 'if' '(' Expression ')' Block [ 'else' Block ]
 def parseIfStatement():
     indent = nextIndt()
     print(indent + 'parseIfStatement():')
@@ -343,7 +324,6 @@ def parseInp():
     print(indent + 'parseInp():')
     parseToken('read', 'keyword')
     parseToken('(', 'bracket')
-    # IdentList
     while True:
         parseToken('*', 'id')
         if table_symb[numRow][1] == ',':
@@ -360,8 +340,6 @@ def parseOut():
     print(indent + 'parseOut():')
     parseToken('write', 'keyword')
     parseToken('(', 'bracket')
-    # IdentList (у специфікації IdentList, але часто дозволяють вирази)
-    # Тут реалізуємо вирази для зручності
     while True:
         parseExpression()
         if table_symb[numRow][1] == ',':
@@ -400,13 +378,12 @@ def parseFunctionCall():
     predIndt()
 
 
-# === Вирази (Пріоритети) ===
+# === Вирази (Expressions) ===
 
 def parseExpression():
     indent = nextIndt()
     print(indent + 'parseExpression():')
     parseLogicalExpr()
-    # Ternary check could be here
     predIndt()
 
 
@@ -414,7 +391,7 @@ def parseLogicalExpr():
     indent = nextIndt()
     print(indent + 'parseLogicalExpr():')
     parseComparisonExpr()
-    while table_symb[numRow][1] in ('&&', '||'):
+    while numRow < len_tableOfSymb and table_symb[numRow][1] in ('&&', '||'):
         parseToken(table_symb[numRow][1], 'logical_op')
         parseComparisonExpr()
     predIndt()
@@ -424,7 +401,7 @@ def parseComparisonExpr():
     indent = nextIndt()
     print(indent + 'parseComparisonExpr():')
     parseAdditiveExpr()
-    while table_symb[numRow][1] in ('==', '!=', '<', '>', '<=', '>='):
+    while numRow < len_tableOfSymb and table_symb[numRow][1] in ('==', '!=', '<', '>', '<=', '>='):
         parseToken(table_symb[numRow][1], 'rel_op')
         parseAdditiveExpr()
     predIndt()
@@ -434,7 +411,7 @@ def parseAdditiveExpr():
     indent = nextIndt()
     print(indent + 'parseAdditiveExpr():')
     parseMultiplicativeExpr()
-    while table_symb[numRow][1] in ('+', '-'):
+    while numRow < len_tableOfSymb and table_symb[numRow][1] in ('+', '-'):
         parseToken(table_symb[numRow][1], 'arith_op')
         parseMultiplicativeExpr()
     predIndt()
@@ -444,25 +421,26 @@ def parseMultiplicativeExpr():
     indent = nextIndt()
     print(indent + 'parseMultiplicativeExpr():')
     parsePrimaryExpr()
-    while table_symb[numRow][1] in ('*', '/', '%'):
+    while numRow < len_tableOfSymb and table_symb[numRow][1] in ('*', '/', '%'):
         parseToken(table_symb[numRow][1], 'arith_op')
         parsePrimaryExpr()
     predIndt()
 
 
 def parsePrimaryExpr():
+    global numRow  # <--- ДОДАНО GLOBAL (це виправило вашу помилку)
     indent = nextIndt()
     print(indent + 'parsePrimaryExpr():')
     _, lex_val, tok, _ = getSymb()
 
     if tok in ('intnum', 'realnum', 'stringval', 'boolval', 'nullval', 'id'):
         parseToken(lex_val, tok)
-        # Check for function call inside expr
-        if table_symb[numRow][1] == '(':
+        # Перевірка на виклик функції (lookahead)
+        if numRow < len_tableOfSymb and table_symb[numRow][1] == '(':
             parseToken('(', 'bracket')
             # args...
             while table_symb[numRow][1] != ')':
-                parseExpression()  # Простий пропуск аргументів для рекурсії
+                parseExpression()
                 if table_symb[numRow][1] == ',':
                     numRow += 1
                 else:
@@ -480,7 +458,7 @@ def parsePrimaryExpr():
 # === ENTRY POINT ===
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Помилка: вкажіть шлях до файлу (txt, dartwader, etc.)")
+        print("Помилка: вкажіть шлях до файлу")
         sys.exit(1)
 
     filename = sys.argv[1]
@@ -488,11 +466,9 @@ if __name__ == "__main__":
         with open(filename, 'r', encoding='utf-8') as f:
             source_code = f.read()
 
-        # 1. Лексичний аналіз
         table_symb = lex(source_code)
         len_tableOfSymb = len(table_symb)
 
-        # 2. Синтаксичний аналіз
         parseProgram()
 
     except FileNotFoundError:
