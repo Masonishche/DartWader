@@ -1,0 +1,8 @@
+ var x = 42;
+var strong = Pivo;
+final name = "Hello";
+const pi = 3.14;
+dynamic value = null;
+if (x > 10) {
+    print("Greater");
+}
